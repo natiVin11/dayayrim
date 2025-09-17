@@ -2,14 +2,10 @@ const express = require('express');
 const path = require('path');
 const bodyParser = require('body-parser');
 const sqlite3 = require('sqlite3').verbose();
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-
-const ADMIN_PHONE_NUMBER = '972549340070';
 
 const db = new sqlite3.Database('./contact_form.db', (err) => {
     if (err) {
@@ -30,84 +26,6 @@ const db = new sqlite3.Database('./contact_form.db', (err) => {
         });
     }
 });
-
-let client;
-let qrCodeData = null;
-let isReady = false;
-let clientTimeout = null;
-
-function initializeWhatsAppClient() {
-    console.log('Initializing WhatsApp client...');
-
-    if (clientTimeout) {
-        clearTimeout(clientTimeout);
-        clientTimeout = null;
-    }
-
-    if (client) {
-        client.destroy().catch(err => console.error('Error destroying old client:', err));
-    }
-
-    client = new Client({
-        authStrategy: new LocalAuth()
-    });
-
-    client.on('qr', qr => {
-        qrCodeData = qr;
-        isReady = false;
-        qrcode.generate(qr, { small: true });
-        console.log('QR Code generated. Scan to connect.');
-    });
-
-    client.on('ready', () => {
-        isReady = true;
-        qrCodeData = null;
-        console.log('WhatsApp client is ready!');
-    });
-
-    client.on('auth_failure', msg => {
-        console.error('Authentication failure:', msg);
-        isReady = false;
-        qrCodeData = null;
-        console.log('Re-initializing client due to auth failure...');
-        clientTimeout = setTimeout(initializeWhatsAppClient, 5000);
-    });
-
-    client.on('disconnected', (reason) => {
-        console.log('Client was disconnected', reason);
-        isReady = false;
-        qrCodeData = null;
-        console.log('Re-initializing client due to disconnection...');
-        clientTimeout = setTimeout(initializeWhatsAppClient, 5000);
-    });
-
-    client.initialize()
-        .then(() => console.log('Client initialization successful.'))
-        .catch(err => {
-            console.error('Failed to initialize WhatsApp client:', err);
-            isReady = false;
-            qrCodeData = null;
-            console.log('Attempting re-initialization in 5 seconds...');
-            clientTimeout = setTimeout(initializeWhatsAppClient, 5000);
-        });
-}
-
-// Helper function to normalize phone numbers to E.164 format
-function normalizePhoneNumber(phone) {
-    const digits = phone.replace(/\D/g, '');
-    if (digits.startsWith('05')) {
-        return '972' + digits.substring(1);
-    }
-    if (digits.startsWith('5')) {
-        return '972' + digits;
-    }
-    if (digits.startsWith('972')) {
-        return digits;
-    }
-    return digits;
-}
-
-initializeWhatsAppClient();
 
 // Detailed projects data
 const projectsData = {
@@ -256,39 +174,6 @@ app.post('/api/contact', async (req, res) => {
         });
         stmt.finalize();
 
-        const whatsappMessageToAdmin = `
-            *פנייה חדשה מאתר האינטרנט:*
-            
-            שם: ${fullName}
-            אימייל: ${email}
-            טלפון: ${phone}
-            הודעה: ${message}
-        `;
-
-        const whatsappMessageToClient = `
-            שלום ${fullName},
-            
-            קיבלנו את פנייתך באתר האינטרנט. נציג מטעמנו יחזור אליך בהקדם.
-            
-            תודה,
-            קבוצת דיירים מתחדשים
-        `;
-
-        if (isReady) {
-            const adminChatId = ADMIN_PHONE_NUMBER + '@c.us';
-            const clientPhoneNumber = normalizePhoneNumber(phone);
-            const clientChatId = clientPhoneNumber + '@c.us';
-
-            await client.sendMessage(adminChatId, whatsappMessageToAdmin);
-            console.log('WhatsApp message sent to admin successfully.');
-
-            await client.sendMessage(clientChatId, whatsappMessageToClient);
-            console.log('WhatsApp message sent to client successfully.');
-
-        } else {
-            console.error('WhatsApp client not ready. Message not sent.');
-        }
-
         res.status(200).json({ status: 'success', message: 'הפנייה נשלחה בהצלחה! נחזור אליכם בהקדם.' });
     } catch (error) {
         console.error('Error processing contact form:', error);
@@ -300,17 +185,6 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
-app.get('/api/qr', (req, res) => {
-    if (isReady) {
-        res.json({ ready: true });
-    } else if (qrCodeData) {
-        // התיקון כאן: שליחת נתוני ה-Base64 בלבד
-        res.json({ qr: qrCodeData });
-    } else {
-        res.json({ status: 'waiting' });
-    }
-});
-
 app.get('/api/contacts', (req, res) => {
     db.all("SELECT * FROM contacts ORDER BY timestamp DESC", [], (err, rows) => {
         if (err) {
@@ -318,28 +192,6 @@ app.get('/api/contacts', (req, res) => {
         }
         res.json({ success: true, contacts: rows });
     });
-});
-
-app.post('/api/logout-whatsapp', async (req, res) => {
-    try {
-        if (client) {
-            await client.logout();
-        }
-        isReady = false;
-        qrCodeData = null;
-        try {
-            const sessionPath = path.join(__dirname, '.wwebjs_auth', 'session');
-            if (fs.existsSync(sessionPath)) {
-                fs.rmSync(sessionPath, { recursive: true, force: true });
-            }
-        } catch (err) {
-            console.error('Error deleting WhatsApp session folder:', err.message);
-        }
-        res.json({ success: true, message: 'Disconnected successfully.' });
-    } catch (err) {
-        console.error('Logout error:', err);
-        res.status(500).json({ success: false, message: 'Failed to disconnect.' });
-    }
 });
 
 app.get('/', (req, res) => {
