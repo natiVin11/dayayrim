@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>דיירים מתחדשים בדרום - פאנל ניהול</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700&display=swap" rel="stylesheet" />
+    <style>
+        body {
+            font-family: 'Heebo', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+            direction: rtl;
+            text-align: right;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h1, h2 { color: #004d40; text-align: center; margin-bottom: 25px; }
+        .connection-status-container {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        #qrCodeImage {
+            max-width: 250px;
+            height: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #fff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-radius: 5px;
+            display: block;
+            margin: 15px auto;
+        }
+        .status-message {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-top: 10px;
+        }
+        .status-message.connected { color: #4CAF50; }
+        .status-message.disconnected { color: #D32F2F; }
+        .status-message.loading { color: #FBC02D; }
+        .action-buttons {
+            margin-top: 15px;
+        }
+        .action-buttons button {
+            padding: 10px 20px;
+            font-size: 16px;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        #logoutBtn {
+            background-color: #d32f2f;
+        }
+        #logoutBtn:hover {
+            background-color: #b71c1c;
+        }
+        #contactsTable {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 30px;
+        }
+        #contactsTable th, #contactsTable td {
+            border: 1px solid #e0e0e0;
+            padding: 12px 15px;
+            text-align: right;
+            vertical-align: top;
+        }
+        #contactsTable th {
+            background-color: #00796b;
+            color: white;
+            font-weight: bold;
+        }
+        #contactsTable tbody tr:nth-child(even) { background-color: #f2fafa; }
+        #contactsTable tbody tr:hover { background-color: #e0f2f1; }
+        #noContactsMessage {
+            text-align: center;
+            margin-top: 20px;
+            font-style: italic;
+            color: #777;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #00796b;
+            animation: spin 1s ease infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body dir="rtl">
+
+    <h2>פניות שהתקבלו</h2>
+    <div id="contactsList">
+        <p id="noContactsMessage" style="display:none;">אין פניות להצגה כרגע.</p>
+        <table id="contactsTable">
+            <thead>
+            <tr>
+                <th>מזהה</th>
+                <th>שם מלא</th>
+                <th>דוא"ל</th>
+                <th>טלפון</th>
+                <th>הודעה</th>
+                <th>תאריך פנייה</th>
+            </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const connectionStatusContent = document.getElementById('connectionStatusContent');
+        const contactsTableBody = document.querySelector('#contactsTable tbody');
+        const noContactsMessage = document.getElementById('noContactsMessage');
+
+        async function updateConnectionStatus() {
+            try {
+                const response = await fetch('/api/qr');
+                const data = await response.json();
+
+                if (data.ready) {
+                    connectionStatusContent.innerHTML = `
+                        <p class="status-message connected">✅ מחובר לוואטסאפ בהצלחה! ההודעות נשלחות דרך המכשיר המחובר.</p>
+                        <div class="action-buttons">
+                            <button id="logoutBtn">התנתק מוואטסאפ</button>
+                        </div>
+                    `;
+                } else if (data.qr) {
+                    // תיקון: הוספת קידומת data URI רק אם היא לא קיימת במידע מהשרת
+                    const qrUrl = data.qr.startsWith('data:image') ? data.qr : `data:image/png;base64,${data.qr}`;
+
+                    connectionStatusContent.innerHTML = `
+                        <p class="status-message disconnected">⚠️ נדרשת התחברות לוואטסאפ</p>
+                        <p>אנא סרוק את קוד ה-QR באמצעות האפליקציה בטלפון שלך (הגדרות > מכשירים מקושרים > קישור מכשיר).</p>
+                        <img id="qrCodeImage" src="${qrUrl}" alt="קוד QR לחיבור WhatsApp" />
+                    `;
+                } else {
+                    connectionStatusContent.innerHTML = `
+                        <div class="spinner"></div>
+                        <p class="status-message loading">...ממתין לקוד QR מהשרת. אנא המתן.</p>
+                    `;
+                }
+
+                const logoutBtn = document.getElementById('logoutBtn');
+                if (logoutBtn) {
+                    logoutBtn.addEventListener('click', async () => {
+                        if (!confirm('להתנתק מוואטסאפ? פעולה זו תנתק את המכשיר ותדרוש חיבור מחדש.')) return;
+                        try {
+                            const res = await fetch('/api/logout-whatsapp', { method: 'POST' });
+                            const data = await res.json();
+                            if (data.success) {
+                                alert('התנתקת בהצלחה.');
+                                updateConnectionStatus();
+                            } else {
+                                alert('שגיאה בהתנתקות: ' + (data.message || 'לא הצליח להתנתק.'));
+                            }
+                        } catch (err) {
+                            alert('שגיאה בתקשורת עם השרת: ' + err.message);
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching connection status:', error);
+                connectionStatusContent.innerHTML = `
+                    <p class="status-message disconnected">❌ שגיאה בטעינת מצב חיבור. אנא רענן את העמוד.</p>
+                `;
+            }
+        }
+
+        async function loadContacts() {
+            try {
+                const response = await fetch('/api/contacts');
+                const data = await response.json();
+
+                if (data.success && data.contacts.length > 0) {
+                    contactsTableBody.innerHTML = '';
+                    noContactsMessage.style.display = 'none';
+                    data.contacts.forEach(contact => {
+                        const row = contactsTableBody.insertRow();
+                        row.innerHTML = `
+                        <td>${contact.id}</td>
+                        <td>${contact.fullName}</td>
+                        <td>${contact.email}</td>
+                        <td>${contact.phone || '---'}</td>
+                        <td>${contact.message}</td>
+                        <td>${new Date(contact.timestamp).toLocaleString('he-IL')}</td>
+                    `;
+                    });
+                } else {
+                    contactsTableBody.innerHTML = '';
+                    noContactsMessage.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error loading contacts:', error);
+                contactsTableBody.innerHTML = `<tr><td colspan="6" style="color:red;text-align:center;">שגיאה בטעינת פניות: ${error.message}</td></tr>`;
+                noContactsMessage.style.display = 'none';
+            }
+        }
+
+        updateConnectionStatus();
+        loadContacts();
+
+        setInterval(updateConnectionStatus, 10000);
+        setInterval(loadContacts, 30000);
+    });
+</script>
+</body>
+</html>
